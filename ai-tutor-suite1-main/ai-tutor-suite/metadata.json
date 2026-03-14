@@ -1,5 +1,0 @@
-{
-  "name": "AI Tutor Suite",
-  "description": "A comprehensive AI assistant combining ChatGPT and Gemini capabilities, featuring chat, image generation, video creation, voice chat, and vision analysis.",
-  "requestFramePermissions": ["camera", "microphone"]
-}
