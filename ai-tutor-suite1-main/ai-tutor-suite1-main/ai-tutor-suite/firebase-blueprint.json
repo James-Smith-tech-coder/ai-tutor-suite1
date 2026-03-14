@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's display name." },
+        "photoURL": { "type": "string", "format": "uri", "description": "The user's profile photo URL." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the user was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the user was last updated." }
+      },
+      "required": ["uid", "email", "createdAt", "updatedAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat session.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The ID of the user who owns this chat." },
+        "title": { "type": "string", "description": "The title of the chat." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the chat was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the chat was last updated." }
+      },
+      "required": ["uid", "title", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message within a chat session.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string", "description": "The ID of the chat this message belongs to." },
+        "role": { "type": "string", "enum": ["user", "model"], "description": "The role of the sender." },
+        "text": { "type": "string", "description": "The text content of the message." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the message was created." }
+      },
+      "required": ["chatId", "role", "text", "createdAt"]
+    },
+    "Creation": {
+      "title": "Creation",
+      "description": "A generated image, video, or audio.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The ID of the user who generated this." },
+        "type": { "type": "string", "enum": ["image", "video", "audio"], "description": "The type of creation." },
+        "prompt": { "type": "string", "description": "The prompt used to generate the creation." },
+        "url": { "type": "string", "format": "uri", "description": "The URL of the creation (if available)." },
+        "data": { "type": "string", "description": "Base64 data of the creation (if available)." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the creation was generated." }
+      },
+      "required": ["uid", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles."
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "Stores chat sessions."
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Stores messages within a chat session."
+    },
+    "/creations/{creationId}": {
+      "schema": { "$ref": "#/entities/Creation" },
+      "description": "Stores generated images, videos, and audio."
+    }
+  }
+}

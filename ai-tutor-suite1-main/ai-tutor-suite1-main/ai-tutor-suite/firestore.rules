@@ -1,0 +1,168 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required, immutable) - The user's unique ID.
+    //   - email: string (required) - The user's email address.
+    //   - displayName: string (optional) - The user's display name.
+    //   - photoURL: string (optional) - The user's profile photo URL.
+    //   - createdAt: timestamp (required, immutable) - When the user was created.
+    //   - updatedAt: timestamp (required) - When the user was last updated.
+    //
+    // Collection: chats
+    // Document ID: {chatId}
+    // Fields:
+    //   - uid: string (required, immutable) - The ID of the user who owns this chat.
+    //   - title: string (required) - The title of the chat.
+    //   - createdAt: timestamp (required, immutable) - When the chat was created.
+    //   - updatedAt: timestamp (required) - When the chat was last updated.
+    //
+    // Collection: chats/{chatId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - chatId: string (required, immutable) - The ID of the chat this message belongs to.
+    //   - role: string (required, immutable) - The role of the sender ('user' or 'model').
+    //   - text: string (required, immutable) - The text content of the message.
+    //   - createdAt: timestamp (required, immutable) - When the message was created.
+    //
+    // Collection: creations
+    // Document ID: {creationId}
+    // Fields:
+    //   - uid: string (required, immutable) - The ID of the user who generated this.
+    //   - type: string (required, immutable) - The type of creation ('image', 'video', 'audio').
+    //   - prompt: string (optional, immutable) - The prompt used to generate the creation.
+    //   - url: string (optional, immutable) - The URL of the creation.
+    //   - data: string (optional, immutable) - Base64 data of the creation.
+    //   - createdAt: timestamp (required, immutable) - When the creation was generated.
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+    
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+    
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+    
+    function isValidUrl(url) {
+      return url is string && (url.matches("^https://.*") || url.matches("^http://.*") || url.matches("^data:.*"));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.email is string && isValidEmail(data.email) && data.email.size() < 256 &&
+             (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 100)) &&
+             (!('photoURL' in data) || (data.photoURL is string && isValidUrl(data.photoURL) && data.photoURL.size() < 2048)) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+    
+    function isValidChat(data) {
+      return hasOnlyAllowedFields(['uid', 'title', 'createdAt', 'updatedAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 256 &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+    
+    function isValidMessage(data) {
+      return hasOnlyAllowedFields(['chatId', 'role', 'text', 'createdAt']) &&
+             data.chatId is string && data.chatId.size() > 0 && data.chatId.size() < 128 &&
+             data.role in ['user', 'model'] &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 1048576 && // 1MB limit
+             data.createdAt is timestamp;
+    }
+    
+    function isValidCreation(data) {
+      return hasOnlyAllowedFields(['uid', 'type', 'prompt', 'url', 'data', 'createdAt']) &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() < 128 &&
+             data.type in ['image', 'video', 'audio'] &&
+             (!('prompt' in data) || (data.prompt is string && data.prompt.size() <= 10000)) &&
+             (!('url' in data) || (data.url is string && isValidUrl(data.url) && data.url.size() < 2048)) &&
+             (!('data' in data) || (data.data is string && data.data.size() <= 1048576)) && // 1MB limit for base64
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && uidUnchanged();
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
+      allow delete: if false; // Users shouldn't be deleted directly from client
+    }
+
+    match /chats/{chatId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidChat(request.resource.data) && uidUnchanged();
+      allow update: if isDocOwner() && isValidChat(request.resource.data) && uidNotModified() && areImmutableFieldsUnchanged(['uid', 'createdAt']);
+      allow delete: if isDocOwner();
+      
+      match /messages/{messageId} {
+        // Only allow access if the user owns the parent chat
+        function ownsParentChat() {
+          return isAuthenticated() && get(/databases/$(database)/documents/chats/$(chatId)).data.uid == request.auth.uid;
+        }
+        
+        allow read: if ownsParentChat();
+        allow create: if ownsParentChat() && isValidMessage(request.resource.data) && request.resource.data.chatId == chatId;
+        allow update: if false; // Messages are immutable
+        allow delete: if ownsParentChat();
+      }
+    }
+
+    match /creations/{creationId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidCreation(request.resource.data) && uidUnchanged();
+      allow update: if false; // Creations are immutable
+      allow delete: if isDocOwner();
+    }
+  }
+}
